@@ -1,0 +1,3 @@
+rootProject.name='VrpdrApp'
+include ':app'
+include ':openCVLibrary346'
