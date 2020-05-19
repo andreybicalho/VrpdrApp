@@ -39,6 +39,8 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
 
     private String ocrPrediction;
 
+    private EMNISTNet emnistNet;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -122,11 +124,12 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
     }
 
     private String predictCharacters(List<Mat> characters) {
+        String predictChars = "";
         for (Mat ch : characters) {
-            // todo: classify ch using CNN
+            predictChars += emnistNet.predict(ch);
         }
 
-        return "Test!";
+        return predictChars;
     }
 
     private void drawLabeledBoundingBox(Mat inputImage, String label, float fontScale, Scalar recColor, Scalar textColor, Rect boundingBox, int thickness) {
@@ -156,6 +159,8 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
                 0.5f);
 
         charactersExtraction = new CharactersExtraction();
+
+        emnistNet = new EMNISTNet(this, "emnist_net_custom.pt");
     }
 
     @Override
