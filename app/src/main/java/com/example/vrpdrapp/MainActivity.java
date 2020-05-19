@@ -160,7 +160,9 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
 
         charactersExtraction = new CharactersExtraction();
 
-        emnistNet = new EMNISTNet(this, "emnist_net_custom.pt");
+        emnistNet = new EMNISTNet(this, "emnist_net_custom_mobile.pth");
+
+        Log.i(TAG, "Modules loaded!");
     }
 
     @Override

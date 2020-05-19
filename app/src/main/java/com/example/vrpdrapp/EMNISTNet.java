@@ -28,11 +28,13 @@ public class EMNISTNet {
 
     private Module module = null;
 
-    public EMNISTNet(Context context, String modulePath) {
+    public EMNISTNet(Context context, String moduleName) {
+        Log.i(TAG, "Loading EMNISTNet... ");
+
         try {
-            this.module = Module.load(assetFilePath(context, modulePath));
+            this.module = Module.load(getAssetFilePath(context, moduleName));
         } catch (IOException e) {
-            Log.e(TAG, "Error reading asset: Failed to load pytorch module from "+modulePath);
+            Log.e(TAG, "Error reading asset: Failed to load pytorch module from "+moduleName);
         }
     }
 
@@ -73,7 +75,7 @@ public class EMNISTNet {
      *
      * @return absolute file path
      */
-    public static String assetFilePath(Context context, String assetName) throws IOException {
+    public static String getAssetFilePath(Context context, String assetName) throws IOException {
         File file = new File(context.getFilesDir(), assetName);
         if (file.exists() && file.length() > 0) {
             return file.getAbsolutePath();
