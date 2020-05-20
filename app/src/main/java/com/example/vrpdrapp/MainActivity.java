@@ -1,10 +1,14 @@
 package com.example.vrpdrapp;
 
+import android.graphics.Bitmap;
+import android.graphics.Color;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.SurfaceView;
 import android.view.View;
 import android.widget.Button;
+import android.widget.ImageView;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
@@ -13,6 +17,7 @@ import org.opencv.android.BaseLoaderCallback;
 import org.opencv.android.CameraBridgeViewBase;
 import org.opencv.android.JavaCameraView;
 import org.opencv.android.OpenCVLoader;
+import org.opencv.android.Utils;
 import org.opencv.core.Core;
 import org.opencv.core.CvType;
 import org.opencv.core.Mat;
@@ -21,6 +26,7 @@ import org.opencv.core.Rect;
 import org.opencv.core.Scalar;
 import org.opencv.imgproc.Imgproc;
 
+import java.util.HashMap;
 import java.util.List;
 
 public class MainActivity extends AppCompatActivity implements CameraBridgeViewBase.CvCameraViewListener2 {
@@ -40,6 +46,9 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
     private String ocrPrediction;
 
     private EMNISTNet emnistNet;
+
+    private HashMap<Integer, Mat> characters = new HashMap<>(); // NOTE: used for debugging
+    private int selectedCharacterIndex = 0;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -80,6 +89,44 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
             @Override
             public void onClick(View v) {
                 ocrProcessing = false;
+                ocrPrediction = "";
+                characters.clear();
+
+                ((ImageView) findViewById(R.id.crop_lp_preview)).setImageResource(0);
+                ((ImageView) findViewById(R.id.lp_preprocessing_preview)).setImageResource(0);
+                ((ImageView) findViewById(R.id.digit_preview)).setImageResource(0);
+
+                ((TextView) findViewById(R.id.ocr_prediction)).setText("");
+            }
+        });
+
+
+        // NOTE: used for debugging
+        Button digit_back = (Button) findViewById(R.id.digit_back);
+        digit_back.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if(!characters.isEmpty()) {
+                    --selectedCharacterIndex;
+                    if (selectedCharacterIndex < 0) {
+                        selectedCharacterIndex = characters.size() - 1;
+                    }
+
+                    showMatOnImageView(characters.get(selectedCharacterIndex), findViewById(R.id.digit_preview));
+                }
+            }
+        });
+        Button digit_foward = (Button) findViewById(R.id.digit_forward);
+        digit_foward.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if(!characters.isEmpty()) {
+                    ++selectedCharacterIndex;
+                    if (selectedCharacterIndex >= characters.size()) {
+                        selectedCharacterIndex = 0;
+                    }
+                    showMatOnImageView(characters.get(selectedCharacterIndex), findViewById(R.id.digit_preview));
+                }
             }
         });
     }
@@ -101,8 +148,12 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
                     return;
                 }
 
+                Log.i(TAG, "ROI(x,y,w,h) ---> ROI("+boundingBox.x+"," +boundingBox.y+","+boundingBox.width+","+boundingBox.height+")");
                 Mat roi = new Mat(frame, boundingBox);
-                List<Mat> chars = charactersExtraction.extract(roi);
+                List<Mat> chars = charactersExtraction.extract2(roi);
+
+                showImageOnDebugPreview(roi, charactersExtraction.getFinalPreprocessedImg(), chars); // NOTE: used for debugging
+
                 ocrPrediction = predictCharacters(chars);
                 drawPredictionBoundingBox(boundingBox, ocrPrediction);
             }
@@ -144,6 +195,40 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
         int h = (boundingBox.y + boundingBox.height) + 25;
         Imgproc.rectangle(processingFrame, new Point(x, y), new Point(w, h), new Scalar(0, 255, 255), 2, Core.FILLED);
         Imgproc.putText(processingFrame, prediction, new Point(x+5, y+20), Core.FONT_HERSHEY_PLAIN, 0.7f, new Scalar(0, 255, 255), 2);
+
+        TextView textView = (TextView) findViewById(R.id.ocr_prediction);
+        textView.setBackgroundColor(Color.BLACK);
+        textView.setTextColor(Color.CYAN);
+        textView.setText(prediction);
+    }
+
+    private void showImageOnDebugPreview(Mat cropedImage, Mat preprocessedImage, List<Mat> chars) {
+        showMatOnImageView(cropedImage, this.findViewById(R.id.crop_lp_preview));
+
+        showMatOnImageView(preprocessedImage, this.findViewById(R.id.lp_preprocessing_preview));
+
+        if(chars != null && !chars.isEmpty()) {
+            showMatOnImageView(chars.get(0), this.findViewById(R.id.digit_preview));
+
+            characters.clear();
+            int index = 0;
+            for(Mat ch : chars) {
+                characters.put(index++, ch);
+            }
+        }
+    }
+
+    private void showMatOnImageView(Mat image, ImageView imageView) {
+        Bitmap bitmap = null;
+
+        bitmap = Bitmap.createBitmap(image.width(), image.height(),Bitmap.Config.ARGB_8888);
+
+        Utils.matToBitmap(image, bitmap);
+
+        imageView.setAdjustViewBounds(true);
+        imageView.setMaxWidth(image.width());
+        imageView.setMaxHeight(image.height());
+        imageView.setImageBitmap(bitmap);
     }
 
     @Override

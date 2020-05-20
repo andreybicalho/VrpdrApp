@@ -1,15 +1,15 @@
 package com.example.vrpdrapp;
 
 import android.content.Context;
-import android.graphics.Bitmap;
 import android.util.Log;
 
-import org.opencv.android.Utils;
+import org.opencv.core.CvType;
 import org.opencv.core.Mat;
+import org.opencv.core.Size;
+import org.opencv.imgproc.Imgproc;
 import org.pytorch.IValue;
 import org.pytorch.Module;
 import org.pytorch.Tensor;
-import org.pytorch.torchvision.TensorImageUtils;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -39,12 +39,20 @@ public class EMNISTNet {
     }
 
     public String predict(Mat inputImage) {
-        Bitmap bitmap = Bitmap.createBitmap(inputImage.width(), inputImage.height(), Bitmap.Config.ARGB_8888);
+        Mat image = new Mat(28, 28, CvType.CV_8UC1);
+        Imgproc.resize(inputImage, image, new Size(28, 28)); // resize image to 28x28
 
-        Utils.matToBitmap(inputImage, bitmap);
+        image.convertTo(image, CvType.CV_32FC1, 1.0/255.0); // convert to type float32 with 1 single channel
 
-        final Tensor inputTensor = TensorImageUtils.bitmapToFloat32Tensor(bitmap,
-                TensorImageUtils.TORCHVISION_NORM_MEAN_RGB, TensorImageUtils.TORCHVISION_NORM_STD_RGB);
+        long[] shape = new long[4]; // expected input shape: 1x1x28x28
+        shape[0] = 1;
+        shape[1] = 1;
+        shape[2] = image.width();
+        shape[3] = image.height();
+
+        float[] imageData = matToFloatArray(image);
+
+        final Tensor inputTensor = Tensor.fromBlob(imageData, shape);
 
         final Tensor outputTensor = module.forward(IValue.from(inputTensor)).toTensor();
 
@@ -55,6 +63,13 @@ public class EMNISTNet {
         String className = CLASS_LABELS[maxScoreIdx];
 
         return  className;
+    }
+
+    private float[] matToFloatArray(Mat image) {
+        float[] data = new float[(int)(image.total()*image.channels())];
+        image.get(0,0, data);
+
+        return data;
     }
 
     private int findMaxScoreIdx(float[] scores) {
