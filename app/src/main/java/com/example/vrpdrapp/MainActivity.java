@@ -50,6 +50,8 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
     private HashMap<Integer, Mat> characters = new HashMap<>(); // NOTE: used for debugging
     private int selectedCharacterIndex = 0;
 
+    private boolean debugPreview = true;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -102,8 +104,20 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
 
 
         // NOTE: used for debugging
-        Button digit_back = (Button) findViewById(R.id.digit_back);
-        digit_back.setOnClickListener(new View.OnClickListener() {
+        Button toggleDebugPreviewButton = (Button) findViewById(R.id.toggle_debug_preview);
+        toggleDebugPreviewButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                debugPreview = !debugPreview;
+
+                toggleDebugPreviewButton.setBackgroundColor(debugPreview ? Color.GREEN : Color.RED);
+
+                enableDebugPreview(debugPreview);
+            }
+        });
+
+        Button digitBack = (Button) findViewById(R.id.digit_back);
+        digitBack.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 if(!characters.isEmpty()) {
@@ -116,8 +130,8 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
                 }
             }
         });
-        Button digit_foward = (Button) findViewById(R.id.digit_forward);
-        digit_foward.setOnClickListener(new View.OnClickListener() {
+        Button digitForward = (Button) findViewById(R.id.digit_forward);
+        digitForward.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 if(!characters.isEmpty()) {
@@ -129,6 +143,36 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
                 }
             }
         });
+
+        enableDebugPreview(debugPreview);
+    }
+
+    private void enableDebugPreview(boolean enable) {
+        int visibility = enable ? View.VISIBLE : View.INVISIBLE;
+
+        ImageView cropLpPreview = findViewById(R.id.crop_lp_preview);
+        cropLpPreview.setEnabled(enable);
+        cropLpPreview.setVisibility(visibility);
+
+        ImageView lpPreprocessingPreview = findViewById(R.id.lp_preprocessing_preview);
+        lpPreprocessingPreview.setEnabled(enable);
+        lpPreprocessingPreview.setVisibility(visibility);
+
+        ImageView digitPreview = findViewById(R.id.digit_preview);
+        digitPreview.setEnabled(enable);
+        digitPreview.setVisibility(visibility);
+
+        Button digitBack = findViewById(R.id.digit_back);
+        digitBack.setEnabled(enable);
+        digitBack.setVisibility(visibility);
+
+        Button digitForward = findViewById(R.id.digit_forward);
+        digitForward.setEnabled(enable);
+        digitForward.setVisibility(visibility);
+
+        TextView ocrPrediction = findViewById(R.id.ocr_prediction);
+        ocrPrediction.setEnabled(enable);
+        ocrPrediction.setVisibility(visibility);
     }
 
     private void predict(Mat frame) {
@@ -144,18 +188,23 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
                         || boundingBox.width < 0 || boundingBox.height < 0
                         || boundingBox.x > frame.width() || boundingBox.y > frame.height()
                         || boundingBox.width > frame.width() || boundingBox.height > frame.height()) {
+                    Log.w(TAG, "BAD ROI(x,y,w,h) ---> ROI("+boundingBox.x+"," +boundingBox.y+","+boundingBox.width+","+boundingBox.height+")");
                     ocrProcessing = false;
                     return;
                 }
 
                 Log.i(TAG, "ROI(x,y,w,h) ---> ROI("+boundingBox.x+"," +boundingBox.y+","+boundingBox.width+","+boundingBox.height+")");
                 Mat roi = new Mat(frame, boundingBox);
-                List<Mat> chars = charactersExtraction.extract2(roi);
+                List<Mat> chars = charactersExtraction.extract4(roi);
 
-                showImageOnDebugPreview(roi, charactersExtraction.getFinalPreprocessedImg(), chars); // NOTE: used for debugging
+                if(debugPreview) {
+                    showImageOnDebugPreview(roi, charactersExtraction.getFinalProcessedImage(), chars);
+                }
 
                 ocrPrediction = predictCharacters(chars);
                 drawPredictionBoundingBox(boundingBox, ocrPrediction);
+
+                roi.release();
             }
         }
     }
