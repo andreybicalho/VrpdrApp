@@ -11,26 +11,95 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:visibility="visible"
-        opencv:show_fps="true" />
+        opencv:show_fps="true"
+        tools:layout_editor_absoluteX="-16dp"
+        tools:layout_editor_absoluteY="99dp" />
 
     <Button
         android:id="@+id/recog_button"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginStart="8dp"
-        android:layout_marginBottom="8dp"
         android:text="Predict"
-        opencv:layout_constraintBottom_toBottomOf="parent"
-        opencv:layout_constraintStart_toStartOf="parent" />
+        opencv:layout_constraintBottom_toBottomOf="@+id/CameraView"
+        opencv:layout_constraintEnd_toEndOf="@+id/CameraView" />
+
+    <Button
+        android:id="@+id/toggle_debug_preview"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Debug"
+        opencv:layout_constraintBottom_toBottomOf="@+id/CameraView"
+        opencv:layout_constraintEnd_toStartOf="@+id/recog_button"
+        opencv:layout_constraintStart_toEndOf="@+id/clear_button" />
 
     <Button
         android:id="@+id/clear_button"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginEnd="8dp"
-        android:layout_marginBottom="8dp"
         android:text="Clear"
-        opencv:layout_constraintBottom_toBottomOf="parent"
-        opencv:layout_constraintEnd_toEndOf="parent" />
+        opencv:layout_constraintBottom_toBottomOf="@+id/CameraView"
+        opencv:layout_constraintStart_toStartOf="@+id/CameraView" />
+
+    <ImageView
+        android:id="@+id/crop_lp_preview"
+        android:layout_width="120dp"
+        android:layout_height="120dp"
+        android:layout_centerHorizontal="true"
+        android:layout_centerVertical="true"
+        android:adjustViewBounds="true"
+        opencv:layout_constraintStart_toStartOf="parent"
+        opencv:layout_constraintTop_toTopOf="parent" />
+
+    <ImageView
+        android:id="@+id/lp_preprocessing_preview"
+        android:layout_width="120dp"
+        android:layout_height="120dp"
+        android:layout_centerHorizontal="true"
+        android:layout_centerVertical="true"
+        android:adjustViewBounds="true"
+        opencv:layout_constraintStart_toStartOf="@+id/CameraView"
+        opencv:layout_constraintTop_toBottomOf="@+id/crop_lp_preview" />
+
+    <TextView
+        android:id="@+id/ocr_prediction"
+        android:layout_width="120dp"
+        android:layout_height="30dp"
+        opencv:layout_constraintStart_toStartOf="parent"
+        opencv:layout_constraintTop_toBottomOf="@+id/lp_preprocessing_preview" />
+
+    <ImageView
+        android:id="@+id/digit_preview"
+        android:layout_width="120dp"
+        android:layout_height="120dp"
+        android:layout_centerHorizontal="true"
+        android:layout_centerVertical="true"
+        android:adjustViewBounds="true"
+        opencv:layout_constraintEnd_toEndOf="parent"
+        opencv:layout_constraintTop_toTopOf="@+id/CameraView" />
+
+    <Button
+        android:id="@+id/digit_back"
+        android:layout_width="73dp"
+        android:layout_height="42dp"
+
+        android:text="back"
+        opencv:layout_constraintEnd_toStartOf="@+id/digit_forward"
+        opencv:layout_constraintTop_toBottomOf="@+id/digit_preview" />
+
+    <Button
+        android:id="@+id/digit_forward"
+        android:layout_width="73dp"
+        android:layout_height="42dp"
+        android:text="next"
+        opencv:layout_constraintEnd_toEndOf="parent"
+        opencv:layout_constraintTop_toBottomOf="@+id/digit_preview" />
+
+    <TextView
+        android:id="@+id/digit_prediction"
+        android:layout_width="30dp"
+        android:layout_height="30dp"
+        android:layout_marginEnd="56dp"
+        opencv:layout_constraintEnd_toEndOf="@+id/CameraView"
+        opencv:layout_constraintTop_toBottomOf="@+id/digit_forward" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>
