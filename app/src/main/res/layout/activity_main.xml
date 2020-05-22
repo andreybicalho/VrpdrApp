@@ -12,8 +12,8 @@
         android:layout_height="match_parent"
         android:visibility="visible"
         opencv:show_fps="true"
-        tools:layout_editor_absoluteX="46dp"
-        tools:layout_editor_absoluteY="16dp" />
+        tools:layout_editor_absoluteX="-16dp"
+        tools:layout_editor_absoluteY="99dp" />
 
     <Button
         android:id="@+id/recog_button"
@@ -93,5 +93,13 @@
         android:text="next"
         opencv:layout_constraintEnd_toEndOf="parent"
         opencv:layout_constraintTop_toBottomOf="@+id/digit_preview" />
+
+    <TextView
+        android:id="@+id/digit_prediction"
+        android:layout_width="30dp"
+        android:layout_height="30dp"
+        android:layout_marginEnd="56dp"
+        opencv:layout_constraintEnd_toEndOf="@+id/CameraView"
+        opencv:layout_constraintTop_toBottomOf="@+id/digit_forward" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>

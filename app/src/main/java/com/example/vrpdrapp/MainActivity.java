@@ -19,13 +19,13 @@ import org.opencv.android.JavaCameraView;
 import org.opencv.android.OpenCVLoader;
 import org.opencv.android.Utils;
 import org.opencv.core.Core;
-import org.opencv.core.CvType;
 import org.opencv.core.Mat;
 import org.opencv.core.Point;
 import org.opencv.core.Rect;
 import org.opencv.core.Scalar;
 import org.opencv.imgproc.Imgproc;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 
@@ -35,10 +35,9 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
     private CameraBridgeViewBase cameraBridgeViewBase;
     private BaseLoaderCallback baseLoaderCallback;
 
-    private Mat currentFrame;
-    private Mat processingFrame;
+    private Mat currentFrame = null;
+    private Mat cachedFrame = null;
     private Yolo yolo;
-    List<Rect> boundingBoxes;
 
     private CharactersExtraction charactersExtraction;
     boolean ocrProcessing = false;
@@ -47,10 +46,15 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
 
     private EMNISTNet emnistNet;
 
-    private HashMap<Integer, Mat> characters = new HashMap<>(); // NOTE: used for debugging
+    // NOTE: used for debugging
+    private boolean debugPreview = false;
+    private HashMap<Integer, Mat> characters = new HashMap<>();
+    private HashMap<Integer, String> predChars = new HashMap<>();
     private int selectedCharacterIndex = 0;
-
-    private boolean debugPreview = true;
+    private Mat cachedRoi;
+    private Mat cachedProcessedRoi;
+    private List<Mat> cachedDigits;
+    private List<String> cachedPreds;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -80,9 +84,7 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
         predictButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                Imgproc.cvtColor(currentFrame, processingFrame, Imgproc.COLOR_RGBA2RGB);
-
-                predict(processingFrame);
+                ocrProcessing = true;
             }
         });
 
@@ -99,6 +101,11 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
                 ((ImageView) findViewById(R.id.digit_preview)).setImageResource(0);
 
                 ((TextView) findViewById(R.id.ocr_prediction)).setText("");
+                ((TextView) findViewById(R.id.digit_prediction)).setText("");
+
+                if(cachedFrame != null) {
+                    cachedFrame.release();
+                }
             }
         });
 
@@ -113,6 +120,13 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
                 toggleDebugPreviewButton.setBackgroundColor(debugPreview ? Color.GREEN : Color.RED);
 
                 enableDebugPreview(debugPreview);
+
+                if(debugPreview) {
+                    ocrProcessing = false;
+                    showMatOnImageView(cachedRoi, findViewById(R.id.crop_lp_preview));
+                    showMatOnImageView(cachedProcessedRoi, findViewById(R.id.lp_preprocessing_preview));
+                    showCharactersOnDebugPreview(cachedDigits, cachedPreds);
+                }
             }
         });
 
@@ -127,6 +141,8 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
                     }
 
                     showMatOnImageView(characters.get(selectedCharacterIndex), findViewById(R.id.digit_preview));
+                    TextView digitPredictionTextView = findViewById(R.id.digit_prediction);
+                    digitPredictionTextView.setText(predChars.get(selectedCharacterIndex));
                 }
             }
         });
@@ -140,6 +156,8 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
                         selectedCharacterIndex = 0;
                     }
                     showMatOnImageView(characters.get(selectedCharacterIndex), findViewById(R.id.digit_preview));
+                    TextView digitPredictionTextView = findViewById(R.id.digit_prediction);
+                    digitPredictionTextView.setText(predChars.get(selectedCharacterIndex));
                 }
             }
         });
@@ -147,38 +165,13 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
         enableDebugPreview(debugPreview);
     }
 
-    private void enableDebugPreview(boolean enable) {
-        int visibility = enable ? View.VISIBLE : View.INVISIBLE;
+    private void predict() {
+        if(currentFrame == null) return;
 
-        ImageView cropLpPreview = findViewById(R.id.crop_lp_preview);
-        cropLpPreview.setEnabled(enable);
-        cropLpPreview.setVisibility(visibility);
+        Imgproc.cvtColor(currentFrame, currentFrame, Imgproc.COLOR_RGBA2RGB);
+        cachedFrame = currentFrame.clone();
 
-        ImageView lpPreprocessingPreview = findViewById(R.id.lp_preprocessing_preview);
-        lpPreprocessingPreview.setEnabled(enable);
-        lpPreprocessingPreview.setVisibility(visibility);
-
-        ImageView digitPreview = findViewById(R.id.digit_preview);
-        digitPreview.setEnabled(enable);
-        digitPreview.setVisibility(visibility);
-
-        Button digitBack = findViewById(R.id.digit_back);
-        digitBack.setEnabled(enable);
-        digitBack.setVisibility(visibility);
-
-        Button digitForward = findViewById(R.id.digit_forward);
-        digitForward.setEnabled(enable);
-        digitForward.setVisibility(visibility);
-
-        TextView ocrPrediction = findViewById(R.id.ocr_prediction);
-        ocrPrediction.setEnabled(enable);
-        ocrPrediction.setVisibility(visibility);
-    }
-
-    private void predict(Mat frame) {
-        ocrProcessing = true;
-
-        boundingBoxes = yolo.detect(frame, true);
+        List<Rect> boundingBoxes = yolo.detect(currentFrame, true);
 
         if(boundingBoxes != null && !boundingBoxes.isEmpty()) {
             for (Rect boundingBox : boundingBoxes) {
@@ -186,23 +179,27 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
                 //drawLabeledBoundingBox(processingFrame, "Test", 2.0f, new Scalar(0, 0, 255), new Scalar(0, 0, 255), boundingBox, 2);
                 if(boundingBox.x < 0 || boundingBox.y < 0
                         || boundingBox.width < 0 || boundingBox.height < 0
-                        || boundingBox.x > frame.width() || boundingBox.y > frame.height()
-                        || boundingBox.width > frame.width() || boundingBox.height > frame.height()) {
+                        || boundingBox.x > currentFrame.width() || boundingBox.y > currentFrame.height()
+                        || boundingBox.width > currentFrame.width() || boundingBox.height > currentFrame.height()) {
                     Log.w(TAG, "BAD ROI(x,y,w,h) ---> ROI("+boundingBox.x+"," +boundingBox.y+","+boundingBox.width+","+boundingBox.height+")");
                     ocrProcessing = false;
                     return;
                 }
 
                 Log.i(TAG, "ROI(x,y,w,h) ---> ROI("+boundingBox.x+"," +boundingBox.y+","+boundingBox.width+","+boundingBox.height+")");
-                Mat roi = new Mat(frame, boundingBox);
-                List<Mat> chars = charactersExtraction.extract4(roi);
+                Mat roi = new Mat(cachedFrame, boundingBox);
+                List<Mat> chars = charactersExtraction.extract1(roi);
+
+                List<String> preds = predictCharacters(chars);
+                ocrPrediction = String.join("", preds);
+                drawPredictionBoundingBox(currentFrame, boundingBox, ocrPrediction);
 
                 if(debugPreview) {
-                    showImageOnDebugPreview(roi, charactersExtraction.getFinalProcessedImage(), chars);
+                    cachedRoi = roi.clone();
+                    cachedProcessedRoi = charactersExtraction.getFinalProcessedImage().clone();
+                    cachedDigits = chars;
+                    cachedPreds = preds;
                 }
-
-                ocrPrediction = predictCharacters(chars);
-                drawPredictionBoundingBox(boundingBox, ocrPrediction);
 
                 roi.release();
             }
@@ -214,19 +211,16 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
         currentFrame = inputFrame.rgba();
 
         if(ocrProcessing) {
-            return processingFrame;
+            predict();
         }
-
-        Imgproc.cvtColor(currentFrame, currentFrame, Imgproc.COLOR_RGBA2RGB);
-        boundingBoxes = yolo.detect(currentFrame, true);
 
         return currentFrame;
     }
 
-    private String predictCharacters(List<Mat> characters) {
-        String predictChars = "";
+    private List<String> predictCharacters(List<Mat> characters) {
+        List<String> predictChars = new ArrayList<>();
         for (Mat ch : characters) {
-            predictChars += emnistNet.predict(ch);
+            predictChars.add(emnistNet.predict(ch));
         }
 
         return predictChars;
@@ -237,37 +231,34 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
         Imgproc.putText(inputImage, label, new Point(boundingBox.x, boundingBox.y), Core.FONT_HERSHEY_PLAIN, fontScale, textColor, thickness);
     }
 
-    private void drawPredictionBoundingBox(Rect boundingBox, String prediction) {
+    private void drawPredictionBoundingBox(Mat inOutImage, Rect boundingBox, String prediction) {
         int x = boundingBox.x;
         int y = boundingBox.y + boundingBox.height;
         int w = boundingBox.x + (int) (1.3 * Imgproc.getTextSize(prediction, Core.FONT_HERSHEY_PLAIN, 0.7f, 2, null).width);
         int h = (boundingBox.y + boundingBox.height) + 25;
-        Imgproc.rectangle(processingFrame, new Point(x, y), new Point(w, h), new Scalar(0, 255, 255), 2, Core.FILLED);
-        Imgproc.putText(processingFrame, prediction, new Point(x+5, y+20), Core.FONT_HERSHEY_PLAIN, 0.7f, new Scalar(0, 255, 255), 2);
-
-        TextView textView = (TextView) findViewById(R.id.ocr_prediction);
-        textView.setBackgroundColor(Color.BLACK);
-        textView.setTextColor(Color.CYAN);
-        textView.setText(prediction);
+        Imgproc.rectangle(inOutImage, new Point(x, y), new Point(w, h), new Scalar(0, 255, 255), 2, Core.FILLED);
+        Imgproc.putText(inOutImage, prediction, new Point(x+5, y+20), Core.FONT_HERSHEY_PLAIN, 0.7f, new Scalar(0, 255, 255), 2);
     }
 
-    private void showImageOnDebugPreview(Mat cropedImage, Mat preprocessedImage, List<Mat> chars) {
-        showMatOnImageView(cropedImage, this.findViewById(R.id.crop_lp_preview));
-
-        showMatOnImageView(preprocessedImage, this.findViewById(R.id.lp_preprocessing_preview));
-
+    private void showCharactersOnDebugPreview(List<Mat> chars, List<String> preds) {
         if(chars != null && !chars.isEmpty()) {
             showMatOnImageView(chars.get(0), this.findViewById(R.id.digit_preview));
 
             characters.clear();
             int index = 0;
             for(Mat ch : chars) {
-                characters.put(index++, ch);
+                characters.put(index, ch);
+                predChars.put(index, preds.get(index) != null ? preds.get(index) : "?");
+                ++index;
             }
         }
+
+        ((TextView) findViewById(R.id.ocr_prediction)).setText(ocrPrediction);
     }
 
     private void showMatOnImageView(Mat image, ImageView imageView) {
+        if (image == null) return;
+
         Bitmap bitmap = null;
 
         bitmap = Bitmap.createBitmap(image.width(), image.height(),Bitmap.Config.ARGB_8888);
@@ -282,7 +273,7 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
 
     @Override
     public void onCameraViewStarted(int width, int height) {
-        processingFrame = new Mat(height, width, CvType.CV_8UC3);
+        Log.i(TAG, "Camera View Started  - Resolution: "+width+"x"+height);
 
         yolo = new Yolo(this,
                 768, 416,
@@ -292,7 +283,7 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
                 0.6f,
                 0.5f);
 
-        charactersExtraction = new CharactersExtraction();
+        charactersExtraction = new CharactersExtraction(0.03f, 0.23f);
 
         emnistNet = new EMNISTNet(this, "emnist_net_custom_mobile.pth");
 
@@ -301,8 +292,12 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
 
     @Override
     public void onCameraViewStopped() {
-        currentFrame.release();
-        processingFrame.release();
+        if(currentFrame != null) {
+            currentFrame.release();
+        }
+        if(cachedFrame != null) {
+            cachedFrame.release();
+        }
     }
 
     @Override
@@ -335,6 +330,42 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
         if (cameraBridgeViewBase != null){
             cameraBridgeViewBase.disableView();
         }
+    }
+
+    private void enableDebugPreview(boolean enable) {
+        int visibility = enable ? View.VISIBLE : View.INVISIBLE;
+
+        ImageView cropLpPreview = findViewById(R.id.crop_lp_preview);
+        cropLpPreview.setEnabled(enable);
+        cropLpPreview.setVisibility(visibility);
+
+        ImageView lpPreprocessingPreview = findViewById(R.id.lp_preprocessing_preview);
+        lpPreprocessingPreview.setEnabled(enable);
+        lpPreprocessingPreview.setVisibility(visibility);
+
+        ImageView digitPreview = findViewById(R.id.digit_preview);
+        digitPreview.setEnabled(enable);
+        digitPreview.setVisibility(visibility);
+
+        Button digitBack = findViewById(R.id.digit_back);
+        digitBack.setEnabled(enable);
+        digitBack.setVisibility(visibility);
+
+        Button digitForward = findViewById(R.id.digit_forward);
+        digitForward.setEnabled(enable);
+        digitForward.setVisibility(visibility);
+
+        TextView ocrPrediction = findViewById(R.id.ocr_prediction);
+        ocrPrediction.setEnabled(enable);
+        ocrPrediction.setVisibility(visibility);
+        ocrPrediction.setBackgroundColor(Color.BLACK);
+        ocrPrediction.setTextColor(Color.CYAN);
+
+        TextView digitPredictionTextView = findViewById(R.id.digit_prediction);
+        digitPredictionTextView.setEnabled(enable);
+        digitPredictionTextView.setVisibility(visibility);
+        digitPredictionTextView.setBackgroundColor(Color.BLACK);
+        digitPredictionTextView.setTextColor(Color.CYAN);
     }
 }
 
