@@ -80,57 +80,41 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
             }
         };
 
-        Button predictButton = (Button) findViewById(R.id.recog_button);
+        Button predictButton = findViewById(R.id.recog_button);
+        predictButton.setBackgroundColor(ocrProcessing ? Color.GREEN : Color.RED);
         predictButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                ocrProcessing = true;
-            }
-        });
+                ocrProcessing = !ocrProcessing;
 
-        Button clearButton = (Button) findViewById(R.id.clear_button);
-        clearButton.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                ocrProcessing = false;
-                ocrPrediction = "";
-                characters.clear();
-
-                ((ImageView) findViewById(R.id.crop_lp_preview)).setImageResource(0);
-                ((ImageView) findViewById(R.id.lp_preprocessing_preview)).setImageResource(0);
-                ((ImageView) findViewById(R.id.digit_preview)).setImageResource(0);
-
-                ((TextView) findViewById(R.id.ocr_prediction)).setText("");
-                ((TextView) findViewById(R.id.digit_prediction)).setText("");
-
-                if(cachedFrame != null) {
-                    cachedFrame.release();
+                if (ocrProcessing) {
+                    debugPreview = false;
+                    toggleDebugPreview(false);
                 }
+
+                predictButton.setBackgroundColor(ocrProcessing ? Color.GREEN : Color.RED);
             }
         });
 
-
-        // NOTE: used for debugging
-        Button toggleDebugPreviewButton = (Button) findViewById(R.id.toggle_debug_preview);
+        Button toggleDebugPreviewButton = findViewById(R.id.toggle_debug_preview);
         toggleDebugPreviewButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 debugPreview = !debugPreview;
 
-                toggleDebugPreviewButton.setBackgroundColor(debugPreview ? Color.GREEN : Color.RED);
-
-                enableDebugPreview(debugPreview);
-
                 if(debugPreview) {
                     ocrProcessing = false;
+                    predict(true);
                     showMatOnImageView(cachedRoi, findViewById(R.id.crop_lp_preview));
                     showMatOnImageView(cachedProcessedRoi, findViewById(R.id.lp_preprocessing_preview));
                     showCharactersOnDebugPreview(cachedDigits, cachedPreds);
                 }
+
+                toggleDebugPreview(debugPreview);
             }
         });
 
-        Button digitBack = (Button) findViewById(R.id.digit_back);
+        Button digitBack = findViewById(R.id.digit_back);
         digitBack.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -146,7 +130,7 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
                 }
             }
         });
-        Button digitForward = (Button) findViewById(R.id.digit_forward);
+        Button digitForward = findViewById(R.id.digit_forward);
         digitForward.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -162,10 +146,10 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
             }
         });
 
-        enableDebugPreview(debugPreview);
+        toggleDebugPreview(debugPreview);
     }
 
-    private void predict() {
+    private void predict(boolean debug) {
         if(currentFrame == null) return;
 
         Imgproc.cvtColor(currentFrame, currentFrame, Imgproc.COLOR_RGBA2RGB);
@@ -182,19 +166,20 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
                         || boundingBox.x > currentFrame.width() || boundingBox.y > currentFrame.height()
                         || boundingBox.width > currentFrame.width() || boundingBox.height > currentFrame.height()) {
                     Log.w(TAG, "BAD ROI(x,y,w,h) ---> ROI("+boundingBox.x+"," +boundingBox.y+","+boundingBox.width+","+boundingBox.height+")");
-                    ocrProcessing = false;
                     return;
                 }
 
                 Log.i(TAG, "ROI(x,y,w,h) ---> ROI("+boundingBox.x+"," +boundingBox.y+","+boundingBox.width+","+boundingBox.height+")");
                 Mat roi = new Mat(cachedFrame, boundingBox);
-                List<Mat> chars = charactersExtraction.extract1(roi);
+                List<Mat> chars = charactersExtraction.extract(roi);
 
                 List<String> preds = predictCharacters(chars);
                 ocrPrediction = String.join("", preds);
                 drawPredictionBoundingBox(currentFrame, boundingBox, ocrPrediction);
 
-                if(debugPreview) {
+                if(debug) {
+                    clearCaches();
+                    cachedFrame = currentFrame.clone();
                     cachedRoi = roi.clone();
                     cachedProcessedRoi = charactersExtraction.getFinalProcessedImage().clone();
                     cachedDigits = chars;
@@ -206,12 +191,30 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
         }
     }
 
+    private void clearCaches() {
+        if(cachedFrame != null) {
+            cachedFrame.release();
+        }
+
+        if(cachedRoi != null) {
+            cachedRoi.release();
+        }
+
+        if(cachedProcessedRoi != null) {
+            cachedProcessedRoi.release();
+        }
+    }
+
     @Override
     public Mat onCameraFrame(CameraBridgeViewBase.CvCameraViewFrame inputFrame) {
         currentFrame = inputFrame.rgba();
 
         if(ocrProcessing) {
-            predict();
+            predict(false);
+        }
+
+        if(debugPreview && cachedFrame != null) {
+            return cachedFrame;
         }
 
         return currentFrame;
@@ -332,8 +335,12 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
         }
     }
 
-    private void enableDebugPreview(boolean enable) {
+    private void toggleDebugPreview(boolean enable) {
+        debugPreview = enable;
         int visibility = enable ? View.VISIBLE : View.INVISIBLE;
+
+        Button toggleDebugPreviewButton = findViewById(R.id.toggle_debug_preview);
+        toggleDebugPreviewButton.setBackgroundColor(enable ? Color.GREEN : Color.RED);
 
         ImageView cropLpPreview = findViewById(R.id.crop_lp_preview);
         cropLpPreview.setEnabled(enable);
@@ -355,17 +362,21 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
         digitForward.setEnabled(enable);
         digitForward.setVisibility(visibility);
 
-        TextView ocrPrediction = findViewById(R.id.ocr_prediction);
-        ocrPrediction.setEnabled(enable);
-        ocrPrediction.setVisibility(visibility);
-        ocrPrediction.setBackgroundColor(Color.BLACK);
-        ocrPrediction.setTextColor(Color.CYAN);
+        TextView ocrPredictionTextView = findViewById(R.id.ocr_prediction);
+        ocrPredictionTextView.setEnabled(enable);
+        ocrPredictionTextView.setVisibility(visibility);
+        ocrPredictionTextView.setBackgroundColor(Color.BLACK);
+        ocrPredictionTextView.setTextColor(Color.CYAN);
+        ocrPredictionTextView.setText(ocrPrediction);
 
         TextView digitPredictionTextView = findViewById(R.id.digit_prediction);
         digitPredictionTextView.setEnabled(enable);
         digitPredictionTextView.setVisibility(visibility);
         digitPredictionTextView.setBackgroundColor(Color.BLACK);
         digitPredictionTextView.setTextColor(Color.CYAN);
+        digitPredictionTextView.setText("");
+
+        findViewById(R.id.recog_button).setBackgroundColor(ocrProcessing ? Color.GREEN : Color.RED);
     }
 }
 

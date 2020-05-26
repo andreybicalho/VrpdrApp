@@ -1,10 +1,12 @@
 package com.example.vrpdrapp;
 
+import org.opencv.core.Core;
 import org.opencv.core.CvType;
 import org.opencv.core.Mat;
 import org.opencv.core.MatOfPoint;
 import org.opencv.core.Point;
 import org.opencv.core.Rect;
+import org.opencv.core.Scalar;
 import org.opencv.core.Size;
 import org.opencv.imgproc.Imgproc;
 
@@ -24,81 +26,19 @@ public class CharactersExtraction {
     }
 
     public List<Mat> extract(Mat inputImage) {
-        // initialize images
         Mat grayImg = new Mat(inputImage.height(), inputImage.width(), CvType.CV_8UC1);
-        Mat blurImg = new Mat(inputImage.height(), inputImage.width(), CvType.CV_8UC1);
-        Mat morphImg = new Mat(inputImage.height(), inputImage.width(), CvType.CV_8UC1);
-        Mat thresholdImg = new Mat(inputImage.height(), inputImage.width(), CvType.CV_8UC1);
-
-        // to gray
         Imgproc.cvtColor(inputImage, grayImg, Imgproc.COLOR_RGB2GRAY);
 
-        Mat se = buildStructuringElement(3, Imgproc.CV_SHAPE_RECT);
-        Imgproc.morphologyEx(grayImg, morphImg, Imgproc.MORPH_CLOSE, se);
-
-        // Otsu's thresholding after Gaussian filtering
-        Imgproc.GaussianBlur(morphImg, blurImg, new Size(5,5), 0);
-        Imgproc.threshold(blurImg, thresholdImg, 0,255,Imgproc.THRESH_BINARY_INV+Imgproc.THRESH_OTSU);
-
-        List<MatOfPoint> contours = new ArrayList<>();
-        Mat hierarchy = new Mat();
-        Imgproc.findContours(thresholdImg, contours, hierarchy, Imgproc.RETR_TREE, Imgproc.CHAIN_APPROX_SIMPLE);
-
-        List<Mat> chars = new ArrayList<>();
-        float totalArea = inputImage.width() * inputImage.height();
-
-        for (MatOfPoint contour : contours) {
-            Rect contourBoundingBox = Imgproc.boundingRect(contour);
-            float roiArea = (float) contourBoundingBox.area();
-            float roiAreaRatio = roiArea / totalArea;
-
-            if(roiAreaRatio >= minContourAreaRatio && roiAreaRatio <= maxContourAreaRatio) {
-                Mat digit = new Mat(thresholdImg, contourBoundingBox);
-                chars.add(digit);
-            }
-        }
-
-        if(finalProcessedImage != null)
-            finalProcessedImage.release();
-
-        finalProcessedImage = thresholdImg.clone();
-
-        grayImg.release();
-        morphImg.release();
-        blurImg.release();
-        thresholdImg.release();
-
-        return chars;
-    }
-
-    public List<Mat> extract1(Mat inputImage) {
-        // initialize images
-        Mat grayImg = new Mat(inputImage.height(), inputImage.width(), CvType.CV_8UC1);
         Mat thresholdImg = new Mat(inputImage.height(), inputImage.width(), CvType.CV_8UC1);
-
-        // to gray
-        Imgproc.cvtColor(inputImage, grayImg, Imgproc.COLOR_RGB2GRAY);
-
-        // Otsu's thresholding
         Imgproc.threshold(grayImg, thresholdImg, 0,255,Imgproc.THRESH_BINARY_INV+Imgproc.THRESH_OTSU);
 
-        List<MatOfPoint> contours = new ArrayList<>();
-        Mat hierarchy = new Mat();
-        Imgproc.findContours(thresholdImg, contours, hierarchy, Imgproc.RETR_TREE, Imgproc.CHAIN_APPROX_SIMPLE);
+        Mat watershedImg = new Mat(inputImage.height(), inputImage.width(), CvType.CV_8UC1);
+        markerBasedWatershed(inputImage, thresholdImg, watershedImg);
+        watershedImg.convertTo(watershedImg, CvType.CV_8UC1);
 
-        List<Mat> chars = new ArrayList<>();
-        float totalArea = inputImage.width() * inputImage.height();
+        extractContours(watershedImg, thresholdImg);
 
-        for (MatOfPoint contour : contours) {
-            Rect contourBoundingBox = Imgproc.boundingRect(contour);
-            float roiArea = (float) contourBoundingBox.area();
-            float roiAreaRatio = roiArea / totalArea;
-
-            if(roiAreaRatio >= minContourAreaRatio && roiAreaRatio <= maxContourAreaRatio) {
-                Mat digit = new Mat(thresholdImg, contourBoundingBox);
-                chars.add(digit);
-            }
-        }
+        List<Mat> chars = extractContours(thresholdImg, null);
 
         if(finalProcessedImage != null)
             finalProcessedImage.release();
@@ -106,6 +46,7 @@ public class CharactersExtraction {
         finalProcessedImage = thresholdImg.clone();
 
         grayImg.release();
+        watershedImg.release();
         thresholdImg.release();
 
         return chars;
@@ -123,23 +64,73 @@ public class CharactersExtraction {
         return this.finalProcessedImage;
     }
 
-    // NOTE: testing
-    public List<Mat> test(Mat inputImage, int kernelSize) {
-        Mat grayImg = new Mat(inputImage.height(), inputImage.width(), CvType.CV_8UC1);
+    private Mat skeletonize(Mat inputImage) {
+        Mat img = inputImage.clone();
+        Mat se = buildStructuringElement(3, Imgproc.CV_SHAPE_CROSS);
 
-        if(finalProcessedImage != null)
-            finalProcessedImage.release();
+        Mat skel = new Mat(img.height(), img.width(), CvType.CV_8UC1, Scalar.all(0));
+        Mat skeleton = new Mat(img.height(), img.width(), CvType.CV_8UC1, Scalar.all(0));
+        Mat openImg = new Mat(img.height(), img.width(), CvType.CV_8UC1);
+        Mat auxImg = new Mat(img.height(), img.width(), CvType.CV_8UC1);
+        Mat erodedImg = new Mat(img.height(), img.width(), CvType.CV_8UC1);
 
-        finalProcessedImage = new Mat(inputImage.height(), inputImage.width(), CvType.CV_8UC1);
 
-        Imgproc.cvtColor(inputImage, grayImg, Imgproc.COLOR_RGB2GRAY);
+        while(true) {
+            Imgproc.morphologyEx(img, openImg, Imgproc.MORPH_OPEN, se);
+            Core.subtract(img, openImg, auxImg);
+            Imgproc.morphologyEx(img, erodedImg, Imgproc.MORPH_ERODE, se);
+            Core.bitwise_or(skel, auxImg, skeleton);
+            skel = skeleton.clone();
+            img = erodedImg.clone();
 
+            if(Core.countNonZero(img) == 0) {
+                break;
+            }
+        }
 
-        Mat se = buildStructuringElement(kernelSize, Imgproc.CV_SHAPE_RECT);
-        Imgproc.morphologyEx(grayImg, finalProcessedImage, Imgproc.MORPH_CLOSE, se);
+        img.release();
+        se.release();
+        skel.release();
+        openImg.release();
+        auxImg.release();
+        erodedImg.release();
 
-        grayImg.release();
+        return skeleton;
+    }
 
-        return new ArrayList<>();
+    private void markerBasedWatershed(Mat image, Mat preMarkerImg, Mat outputImg) {
+        Mat skeleton = skeletonize(preMarkerImg);
+        Imgproc.connectedComponents(skeleton, outputImg);
+
+        Imgproc.watershed(image, outputImg);
+    }
+
+    private List<Mat> extractContours(Mat inputImage, Mat outputMaskedImg) {
+        List<MatOfPoint> contours = new ArrayList<>();
+        Mat hierarchy = new Mat();
+        Imgproc.findContours(inputImage, contours, hierarchy, Imgproc.RETR_TREE, Imgproc.CHAIN_APPROX_SIMPLE);
+
+        List<Mat> result = new ArrayList<>();
+        float totalArea = inputImage.width() * inputImage.height();
+
+        List<MatOfPoint> contoursUsedForMasking = new ArrayList<>();
+
+        for (MatOfPoint contour : contours) {
+            Rect contourBoundingBox = Imgproc.boundingRect(contour);
+            float roiArea = (float) contourBoundingBox.area();
+            float roiAreaRatio = roiArea / totalArea;
+
+            if(roiAreaRatio >= minContourAreaRatio && roiAreaRatio <= maxContourAreaRatio) {
+                contoursUsedForMasking.add(contour);
+                Mat digit = new Mat(inputImage, contourBoundingBox);
+                result.add(digit);
+            }
+        }
+
+        if(outputMaskedImg != null) {
+            Imgproc.drawContours(outputMaskedImg, contoursUsedForMasking, -1, new Scalar(255, 255, 255), 1);
+        }
+
+        return result;
     }
 }

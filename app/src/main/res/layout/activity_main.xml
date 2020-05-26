@@ -29,16 +29,8 @@
         android:layout_height="wrap_content"
         android:text="Debug"
         opencv:layout_constraintBottom_toBottomOf="@+id/CameraView"
-        opencv:layout_constraintEnd_toStartOf="@+id/recog_button"
-        opencv:layout_constraintStart_toEndOf="@+id/clear_button" />
-
-    <Button
-        android:id="@+id/clear_button"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Clear"
-        opencv:layout_constraintBottom_toBottomOf="@+id/CameraView"
         opencv:layout_constraintStart_toStartOf="@+id/CameraView" />
+
 
     <ImageView
         android:id="@+id/crop_lp_preview"
