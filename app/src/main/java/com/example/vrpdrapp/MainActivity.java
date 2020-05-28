@@ -19,6 +19,7 @@ import org.opencv.android.JavaCameraView;
 import org.opencv.android.OpenCVLoader;
 import org.opencv.android.Utils;
 import org.opencv.core.Core;
+import org.opencv.core.CvType;
 import org.opencv.core.Mat;
 import org.opencv.core.Point;
 import org.opencv.core.Rect;
@@ -152,9 +153,7 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
     private void predict(boolean debug) {
         if(currentFrame == null) return;
 
-        Imgproc.cvtColor(currentFrame, currentFrame, Imgproc.COLOR_RGBA2RGB);
         cachedFrame = currentFrame.clone();
-
         List<Rect> boundingBoxes = yolo.detect(currentFrame, true);
 
         if(boundingBoxes != null && !boundingBoxes.isEmpty()) {
@@ -203,13 +202,28 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
         if(cachedProcessedRoi != null) {
             cachedProcessedRoi.release();
         }
+
+        ImageView cropLpPreview = findViewById(R.id.crop_lp_preview);
+        cropLpPreview.setImageResource(0);
+
+        ImageView lpPreprocessingPreview = findViewById(R.id.lp_preprocessing_preview);
+        lpPreprocessingPreview.setImageResource(0);
+
+        ImageView digitPreview = findViewById(R.id.digit_preview);
+        digitPreview.setImageResource(0);
+
+        TextView ocrPredictionTextView = findViewById(R.id.ocr_prediction);
+        ocrPredictionTextView.setText("");
+
+        TextView digitPredictionTextView = findViewById(R.id.digit_prediction);
+        digitPredictionTextView.setText("");
     }
 
     @Override
     public Mat onCameraFrame(CameraBridgeViewBase.CvCameraViewFrame inputFrame) {
-        currentFrame = inputFrame.rgba();
+        Imgproc.cvtColor(inputFrame.rgba(), currentFrame, Imgproc.COLOR_RGBA2RGB);
 
-        if(ocrProcessing) {
+       if(ocrProcessing) {
             predict(false);
         }
 
@@ -260,11 +274,9 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
     }
 
     private void showMatOnImageView(Mat image, ImageView imageView) {
-        if (image == null) return;
+        if (image == null || imageView == null) return;
 
-        Bitmap bitmap = null;
-
-        bitmap = Bitmap.createBitmap(image.width(), image.height(),Bitmap.Config.ARGB_8888);
+        Bitmap bitmap = Bitmap.createBitmap(image.width(), image.height(),Bitmap.Config.ARGB_8888);
 
         Utils.matToBitmap(image, bitmap);
 
@@ -276,6 +288,8 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
 
     @Override
     public void onCameraViewStarted(int width, int height) {
+        currentFrame = new Mat(height, width, CvType.CV_8UC3);
+
         Log.i(TAG, "Camera View Started  - Resolution: "+width+"x"+height);
 
         yolo = new Yolo(this,
@@ -286,11 +300,9 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
                 0.6f,
                 0.5f);
 
-        charactersExtraction = new CharactersExtraction(0.03f, 0.23f);
+        charactersExtraction = new CharactersExtraction(0.006f, 0.3f);
 
         emnistNet = new EMNISTNet(this, "emnist_net_custom_mobile.pth");
-
-        Log.i(TAG, "Modules loaded!");
     }
 
     @Override

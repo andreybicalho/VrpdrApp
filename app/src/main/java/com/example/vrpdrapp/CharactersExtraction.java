@@ -15,7 +15,11 @@ import java.util.List;
 
 public class CharactersExtraction {
 
+    private static final String TAG = CharactersExtraction.class.getSimpleName();
+
     private Mat finalProcessedImage;
+
+    private Mat kernelDefault;
 
     private float minContourAreaRatio = 0.02f;
     private float maxContourAreaRatio = 0.1f;
@@ -23,6 +27,8 @@ public class CharactersExtraction {
     public CharactersExtraction(float minContourAreaRatio, float maxContourAreaRatio) {
         this.minContourAreaRatio = minContourAreaRatio;
         this.maxContourAreaRatio = maxContourAreaRatio;
+
+        kernelDefault = buildStructuringElement(3, Imgproc.CV_SHAPE_CROSS);
     }
 
     public List<Mat> extract(Mat inputImage) {
@@ -33,21 +39,22 @@ public class CharactersExtraction {
         Imgproc.threshold(grayImg, thresholdImg, 0,255,Imgproc.THRESH_BINARY_INV+Imgproc.THRESH_OTSU);
 
         Mat watershedImg = new Mat(inputImage.height(), inputImage.width(), CvType.CV_8UC1);
-        markerBasedWatershed(inputImage, thresholdImg, watershedImg);
-        watershedImg.convertTo(watershedImg, CvType.CV_8UC1);
+        //skeletonMarkerBasedWatershed(inputImage, thresholdImg, watershedImg);
+        intersectionLinesMarkerBasedWatershedSegmentation(inputImage, thresholdImg, watershedImg);
 
-        extractContours(watershedImg, thresholdImg);
-
-        List<Mat> chars = extractContours(thresholdImg, null);
+        Mat maskedImg = new Mat(inputImage.height(), inputImage.width(), CvType.CV_8UC1, Scalar.all(0));
+        extractContours(watershedImg, maskedImg);
+        List<Mat> chars = extractContours(maskedImg, null);
 
         if(finalProcessedImage != null)
             finalProcessedImage.release();
 
-        finalProcessedImage = thresholdImg.clone();
+        finalProcessedImage = maskedImg.clone();
 
         grayImg.release();
         watershedImg.release();
         thresholdImg.release();
+        maskedImg.release();
 
         return chars;
     }
@@ -65,72 +72,111 @@ public class CharactersExtraction {
     }
 
     private Mat skeletonize(Mat inputImage) {
-        Mat img = inputImage.clone();
-        Mat se = buildStructuringElement(3, Imgproc.CV_SHAPE_CROSS);
+        Mat erodedImg = inputImage.clone();
 
-        Mat skel = new Mat(img.height(), img.width(), CvType.CV_8UC1, Scalar.all(0));
-        Mat skeleton = new Mat(img.height(), img.width(), CvType.CV_8UC1, Scalar.all(0));
-        Mat openImg = new Mat(img.height(), img.width(), CvType.CV_8UC1);
-        Mat auxImg = new Mat(img.height(), img.width(), CvType.CV_8UC1);
-        Mat erodedImg = new Mat(img.height(), img.width(), CvType.CV_8UC1);
-
+        Mat skeleton = new Mat(inputImage.height(), inputImage.width(), CvType.CV_8UC1, Scalar.all(0));
+        Mat openImg = new Mat(inputImage.height(), inputImage.width(), CvType.CV_8UC1);
+        Mat auxImg = new Mat(inputImage.height(), inputImage.width(), CvType.CV_8UC1);
 
         while(true) {
-            Imgproc.morphologyEx(img, openImg, Imgproc.MORPH_OPEN, se);
-            Core.subtract(img, openImg, auxImg);
-            Imgproc.morphologyEx(img, erodedImg, Imgproc.MORPH_ERODE, se);
-            Core.bitwise_or(skel, auxImg, skeleton);
-            skel = skeleton.clone();
-            img = erodedImg.clone();
+            Imgproc.morphologyEx(erodedImg, openImg, Imgproc.MORPH_OPEN, kernelDefault);
+            Core.subtract(erodedImg, openImg, auxImg);
+            Imgproc.morphologyEx(erodedImg, erodedImg, Imgproc.MORPH_ERODE, kernelDefault);
+            Core.bitwise_or(skeleton, auxImg, skeleton);
 
-            if(Core.countNonZero(img) == 0) {
+            if(Core.countNonZero(erodedImg) == 0) {
                 break;
             }
         }
 
-        img.release();
-        se.release();
-        skel.release();
+        erodedImg.release();
         openImg.release();
         auxImg.release();
-        erodedImg.release();
 
         return skeleton;
     }
 
-    private void markerBasedWatershed(Mat image, Mat preMarkerImg, Mat outputImg) {
+    private void skeletonMarkerBasedWatershed(Mat image, Mat preMarkerImg, Mat outputImg) {
         Mat skeleton = skeletonize(preMarkerImg);
         Imgproc.connectedComponents(skeleton, outputImg);
 
+        skeleton.release();
+
         Imgproc.watershed(image, outputImg);
+
+        watershedToBw(outputImg);
+        outputImg.convertTo(outputImg, CvType.CV_8UC1);
+    }
+
+    private void intersectionLinesMarkerBasedWatershedSegmentation(Mat image, Mat preMarkerImg, Mat outputImg) {
+        Mat intersectionImg = new Mat(preMarkerImg.height(), preMarkerImg.width(), CvType.CV_8UC1, Scalar.all(0));
+        int h1 = preMarkerImg.height() / 2;
+        int h2 = h1 + preMarkerImg.height() / 4;
+
+        Imgproc.line(intersectionImg, new Point(0, h1), new Point(preMarkerImg.width(), h1), new Scalar(255), 3);
+        Imgproc.line(intersectionImg, new Point(0, h2), new Point(preMarkerImg.width(), h2), new Scalar(255), 3);
+        Core.bitwise_and(intersectionImg, preMarkerImg, intersectionImg);
+
+        Imgproc.connectedComponents(intersectionImg, outputImg);
+
+        Imgproc.watershed(image, outputImg);
+
+        watershedToBw(outputImg);
+        outputImg.convertTo(outputImg, CvType.CV_8UC1);
+    }
+
+    private void watershedToBw(Mat image) {
+        int[] imgData = new int[(int) (image.total() * image.channels())];
+        int pixelValue;
+        image.get(0, 0, imgData);
+        for (int i = 0; i < image.rows(); i++) {
+            for (int j = 0; j < image.cols(); j++) {
+                pixelValue = imgData[(i * image.cols() + j)];
+                if(pixelValue == -1) {
+                    imgData[(i * image.cols() + j)] = 255;
+                } else if(pixelValue != 255) {
+                    imgData[(i * image.cols() + j)] = 0;
+                }
+            }
+        }
+        image.put(0, 0, imgData);
+        return;
     }
 
     private List<Mat> extractContours(Mat inputImage, Mat outputMaskedImg) {
         List<MatOfPoint> contours = new ArrayList<>();
         Mat hierarchy = new Mat();
         Imgproc.findContours(inputImage, contours, hierarchy, Imgproc.RETR_TREE, Imgproc.CHAIN_APPROX_SIMPLE);
+        // TODO: sort contours from left to right
 
         List<Mat> result = new ArrayList<>();
         float totalArea = inputImage.width() * inputImage.height();
 
-        List<MatOfPoint> contoursUsedForMasking = new ArrayList<>();
+        List<Integer> contoursUsedForMasking = new ArrayList<>();
 
+        int contourIdx = 0;
         for (MatOfPoint contour : contours) {
             Rect contourBoundingBox = Imgproc.boundingRect(contour);
             float roiArea = (float) contourBoundingBox.area();
             float roiAreaRatio = roiArea / totalArea;
 
             if(roiAreaRatio >= minContourAreaRatio && roiAreaRatio <= maxContourAreaRatio) {
-                contoursUsedForMasking.add(contour);
+                contoursUsedForMasking.add(contourIdx);
                 Mat digit = new Mat(inputImage, contourBoundingBox);
                 result.add(digit);
             }
+            ++contourIdx;
         }
 
         if(outputMaskedImg != null) {
-            Imgproc.drawContours(outputMaskedImg, contoursUsedForMasking, -1, new Scalar(255, 255, 255), 1);
+            for(Integer idx : contoursUsedForMasking) {
+                Imgproc.drawContours(outputMaskedImg, contours, idx.intValue(), new Scalar(255), -1);
+            }
         }
 
         return result;
     }
+
+
+
 }
