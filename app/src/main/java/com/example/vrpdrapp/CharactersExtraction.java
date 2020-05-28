@@ -43,8 +43,10 @@ public class CharactersExtraction {
         intersectionLinesMarkerBasedWatershedSegmentation(inputImage, thresholdImg, watershedImg);
 
         Mat maskedImg = new Mat(inputImage.height(), inputImage.width(), CvType.CV_8UC1, Scalar.all(0));
-        extractContours(watershedImg, maskedImg);
-        List<Mat> chars = extractContours(maskedImg, null);
+        extractBoxedContours(watershedImg, maskedImg);
+        Core.bitwise_and(maskedImg, thresholdImg, maskedImg);
+        List<Mat> chars = extractBoxedContours(maskedImg, maskedImg);
+        Core.bitwise_and(maskedImg, thresholdImg, maskedImg);
 
         if(finalProcessedImage != null)
             finalProcessedImage.release();
@@ -143,40 +145,45 @@ public class CharactersExtraction {
         return;
     }
 
-    private List<Mat> extractContours(Mat inputImage, Mat outputMaskedImg) {
+    private List<Mat> extractBoxedContours(Mat inputImage, Mat outputMask) {
         List<MatOfPoint> contours = new ArrayList<>();
         Mat hierarchy = new Mat();
         Imgproc.findContours(inputImage, contours, hierarchy, Imgproc.RETR_TREE, Imgproc.CHAIN_APPROX_SIMPLE);
-        // TODO: sort contours from left to right
+        contours.sort((m1, m2) -> {
+            Rect rect1 = Imgproc.boundingRect(m1);
+            Rect rect2 = Imgproc.boundingRect(m2);
+
+            if (rect1.x > rect2.x) {
+                return 1;
+            } else if (rect1.x < rect2.x) {
+                return -1;
+            } else {
+                return 0;
+            }
+        });
 
         List<Mat> result = new ArrayList<>();
         float totalArea = inputImage.width() * inputImage.height();
 
-        List<Integer> contoursUsedForMasking = new ArrayList<>();
-
-        int contourIdx = 0;
         for (MatOfPoint contour : contours) {
             Rect contourBoundingBox = Imgproc.boundingRect(contour);
             float roiArea = (float) contourBoundingBox.area();
             float roiAreaRatio = roiArea / totalArea;
 
             if(roiAreaRatio >= minContourAreaRatio && roiAreaRatio <= maxContourAreaRatio) {
-                contoursUsedForMasking.add(contourIdx);
                 Mat digit = new Mat(inputImage, contourBoundingBox);
                 result.add(digit);
-            }
-            ++contourIdx;
-        }
 
-        if(outputMaskedImg != null) {
-            for(Integer idx : contoursUsedForMasking) {
-                Imgproc.drawContours(outputMaskedImg, contours, idx.intValue(), new Scalar(255), -1);
+                if(outputMask != null) {
+                    Imgproc.rectangle(outputMask,
+                            new Point(contourBoundingBox.x, contourBoundingBox.y),
+                            new Point(contourBoundingBox.x + contourBoundingBox.width, contourBoundingBox.y + contourBoundingBox.height),
+                            new Scalar(255),
+                            -1);
+                }
             }
         }
 
         return result;
     }
-
-
-
 }
