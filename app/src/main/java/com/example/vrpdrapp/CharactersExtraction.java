@@ -35,8 +35,10 @@ public class CharactersExtraction {
         Mat grayImg = new Mat(inputImage.height(), inputImage.width(), CvType.CV_8UC1);
         Imgproc.cvtColor(inputImage, grayImg, Imgproc.COLOR_RGB2GRAY);
 
+        Imgproc.morphologyEx(grayImg, grayImg, Imgproc.MORPH_BLACKHAT, kernelDefault);
+
         Mat thresholdImg = new Mat(inputImage.height(), inputImage.width(), CvType.CV_8UC1);
-        Imgproc.threshold(grayImg, thresholdImg, 0,255,Imgproc.THRESH_BINARY_INV+Imgproc.THRESH_OTSU);
+        Imgproc.threshold(grayImg, thresholdImg, 0,255,Imgproc.THRESH_BINARY+Imgproc.THRESH_OTSU);
 
         Mat watershedImg = new Mat(inputImage.height(), inputImage.width(), CvType.CV_8UC1);
         //skeletonMarkerBasedWatershed(inputImage, thresholdImg, watershedImg);
@@ -45,6 +47,7 @@ public class CharactersExtraction {
         Mat maskedImg = new Mat(inputImage.height(), inputImage.width(), CvType.CV_8UC1, Scalar.all(0));
         extractBoxedContours(watershedImg, maskedImg);
         Core.bitwise_and(maskedImg, thresholdImg, maskedImg);
+        // repeat procedure to refine extraction
         List<Mat> chars = extractBoxedContours(maskedImg, maskedImg);
         Core.bitwise_and(maskedImg, thresholdImg, maskedImg);
 
