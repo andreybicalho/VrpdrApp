@@ -2,7 +2,7 @@
 
 Detection and recognition of vehicle license plate done in real-time. 
 
-This is a simple mobile app version of the [vrpdr](https://github.com/andreybicalho/vrpdr) project for Android devices.
+This is a simple mobile app version of the [vrpdr](https://github.com/andreybicalho/vrpdr/tree/emnist-ocr) project for Android devices.
 
 ![screenshot](screenshot_vrpdrapp.jpg)
 
